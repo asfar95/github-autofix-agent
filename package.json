@@ -1,0 +1,16 @@
+{
+  "name": "github-autofix-agent",
+  "version": "1.0.0",
+  "description": "Autonomous AI agent that reads GitHub bug reports, writes a fix, and opens a pull request for review",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "fix": "node src/cli.js"
+  },
+  "dependencies": {
+    "@octokit/rest": "^20.1.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "openai": "^4.52.0"
+  }
+}
