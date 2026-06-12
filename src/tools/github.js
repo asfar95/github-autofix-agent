@@ -52,6 +52,45 @@ async function searchCode({ owner, repo, query }) {
   }
 }
 
+// ── PR review tools ───────────────────────────────────────────────────────────
+
+async function getPullRequest({ owner, repo, pull_number }) {
+  const { data } = await octokit.pulls.get({ owner, repo, pull_number });
+  return {
+    number: data.number,
+    title: data.title,
+    body: data.body || '',
+    state: data.state,
+    head_branch: data.head.ref,
+    base_branch: data.base.ref,
+    url: data.html_url,
+    created_by: data.user.login,
+  };
+}
+
+async function getPrReviewComments({ owner, repo, pull_number }) {
+  const { data } = await octokit.pulls.listReviewComments({
+    owner, repo, pull_number, per_page: 50,
+  });
+  return data.map(c => ({
+    id: c.id,
+    path: c.path,
+    line: c.line || c.original_line,
+    body: c.body,
+    author: c.user.login,
+    url: c.html_url,
+  }));
+}
+
+async function replyToReviewComment({ owner, repo, pull_number, comment_id, body }) {
+  const { data } = await octokit.pulls.createReplyForReviewComment({
+    owner, repo, pull_number,
+    comment_id,
+    body,
+  });
+  return { success: true, url: data.html_url };
+}
+
 // ── Branch / write tools ───────────────────────────────────────────────────────
 
 async function getDefaultBranch({ owner, repo }) {
@@ -276,6 +315,56 @@ const TOOL_DEFINITIONS = [
   {
     type: 'function',
     function: {
+      name: 'get_pull_request',
+      description: 'Get details of a pull request including its branch name',
+      parameters: {
+        type: 'object',
+        properties: {
+          owner:       { type: 'string' },
+          repo:        { type: 'string' },
+          pull_number: { type: 'number' },
+        },
+        required: ['owner', 'repo', 'pull_number'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'get_pr_review_comments',
+      description: 'Get all inline review comments on a pull request, including the file path and line number each comment refers to',
+      parameters: {
+        type: 'object',
+        properties: {
+          owner:       { type: 'string' },
+          repo:        { type: 'string' },
+          pull_number: { type: 'number' },
+        },
+        required: ['owner', 'repo', 'pull_number'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'reply_to_review_comment',
+      description: 'Reply to a specific review comment on a PR — use to confirm a fix was applied or explain why a comment was not addressed',
+      parameters: {
+        type: 'object',
+        properties: {
+          owner:      { type: 'string' },
+          repo:       { type: 'string' },
+          pull_number: { type: 'number' },
+          comment_id: { type: 'number', description: 'The id field from get_pr_review_comments' },
+          body:       { type: 'string' },
+        },
+        required: ['owner', 'repo', 'pull_number', 'comment_id', 'body'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'escalate_to_human',
       description: 'Flag the issue as requiring a human developer. Use when: the fix spans more than 3 files, requires schema/API changes, or you cannot confidently identify the root cause after reading the code.',
       parameters: {
@@ -294,16 +383,19 @@ const TOOL_DEFINITIONS = [
 ];
 
 const TOOL_HANDLERS = {
-  get_issue_details:     getIssueDetails,
-  list_repo_files:       listRepoFiles,
-  get_file_content:      getFileContent,
-  search_code:           searchCode,
-  get_default_branch:    getDefaultBranch,
-  create_branch:         createBranch,
-  create_or_update_file: createOrUpdateFile,
-  create_pull_request:   createPullRequest,
-  post_issue_comment:    postIssueComment,
-  escalate_to_human:     escalateToHuman,
+  get_issue_details:      getIssueDetails,
+  list_repo_files:        listRepoFiles,
+  get_file_content:       getFileContent,
+  search_code:            searchCode,
+  get_default_branch:     getDefaultBranch,
+  create_branch:          createBranch,
+  create_or_update_file:  createOrUpdateFile,
+  create_pull_request:    createPullRequest,
+  post_issue_comment:     postIssueComment,
+  escalate_to_human:      escalateToHuman,
+  get_pull_request:       getPullRequest,
+  get_pr_review_comments: getPrReviewComments,
+  reply_to_review_comment: replyToReviewComment,
 };
 
 module.exports = { TOOL_DEFINITIONS, TOOL_HANDLERS };
