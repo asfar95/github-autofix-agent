@@ -7,13 +7,11 @@ const { runReviewAgent } = require('./review-agent');
 const app = express();
 const PORT = process.env.PORT || 3003;
 
-app.use(express.raw({ type: 'application/json' }));
-
-function verifySignature(payload, signature) {
+function verifySignature(rawBody, signature) {
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
   if (!secret) return true;
   if (!signature) return false;
-  const digest = 'sha256=' + crypto.createHmac('sha256', secret).update(payload).digest('hex');
+  const digest = 'sha256=' + crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
   return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
 }
 
@@ -21,13 +19,20 @@ app.post('/webhook', async (req, res) => {
   const event = req.headers['x-github-event'];
   const signature = req.headers['x-hub-signature-256'];
 
-  if (!verifySignature(req.body, signature)) {
+  const chunks = [];
+  req.on('data', chunk => chunks.push(chunk));
+  await new Promise(resolve => req.on('end', resolve));
+  const rawBody = Buffer.concat(chunks);
+
+  if (!verifySignature(rawBody, signature)) {
     return res.status(401).json({ error: 'Invalid signature' });
   }
 
   let payload;
   try {
-    payload = JSON.parse(req.body.toString());
+    let bodyStr = rawBody.toString();
+    if (bodyStr.startsWith('payload=')) bodyStr = decodeURIComponent(bodyStr.slice(8));
+    payload = JSON.parse(bodyStr);
   } catch {
     return res.status(400).json({ error: 'Invalid JSON' });
   }
@@ -43,9 +48,16 @@ app.post('/webhook', async (req, res) => {
     const issueNumber = payload.issue.number;
     console.log(`\n📬 Bug label added: ${owner}/${repo}#${issueNumber} — "${payload.issue.title}"`);
     res.status(200).json({ message: 'Fix started', issue: issueNumber });
-    runAgent(owner, repo, issueNumber).catch(err =>
-      console.error('❌ Autofix agent error:', err.message)
-    );
+    const startupDelay = parseInt(process.env.AUTOFIX_STARTUP_DELAY ?? '90000', 10);
+    (async () => {
+      if (startupDelay > 0) {
+        console.log(`  ⏳ Waiting ${startupDelay / 1000}s for triage agent to finish before starting autofix...`);
+        await new Promise(r => setTimeout(r, startupDelay));
+      }
+      runAgent(owner, repo, issueNumber).catch(err =>
+        console.error('❌ Autofix agent error:', err.message)
+      );
+    })();
     return;
   }
 

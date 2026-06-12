@@ -2,8 +2,8 @@ const OpenAI = require('openai');
 const { Octokit } = require('@octokit/rest');
 const { TOOL_DEFINITIONS, TOOL_HANDLERS } = require('./tools/github');
 
-const MAX_ITERATIONS = 15;
-const MAX_RETRIES = 3;
+const MAX_ITERATIONS = parseInt(process.env.AGENT_MAX_ITERATIONS || '15', 10);
+const MAX_RETRIES = parseInt(process.env.AGENT_MAX_RETRIES || '3', 10);
 const REVIEW_MARKER = '<!-- autofix-review-agent -->';
 
 const client = new OpenAI({
@@ -85,9 +85,13 @@ async function callLLM(messages, attempt = 0) {
       tools: TOOL_DEFINITIONS,
       tool_choice: 'auto',
       parallel_tool_calls: false,
-      max_tokens: 2048,
+      max_tokens: parseInt(process.env.AI_MAX_TOKENS || '1500', 10),
     });
   } catch (err) {
+    // 413 = request too large — not retryable
+    if (err.status === 413) {
+      throw new Error(`Request too large for model TPM limit — ${err.message}`);
+    }
     if (err.status === 429) {
       const isQuotaExhausted = /tokens per day|tokens per hour|quota/i.test(err.message);
       if (isQuotaExhausted) {
@@ -137,6 +141,7 @@ async function runReviewAgent(owner, repo, pullNumber) {
       response = await callLLM(messages);
     } catch (err) {
       if (err.message.startsWith('Daily token quota exhausted')) throw err;
+      if (err.message.startsWith('Request too large')) throw err;
       console.error(`  ❌ LLM error: ${err.message}`);
       messages.push({
         role: 'user',
