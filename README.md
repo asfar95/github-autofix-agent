@@ -65,7 +65,7 @@ src/
     └── github.js     — 13 GitHub tools + OpenAI function-calling definitions
 ```
 
-**Stack:** Node.js · Groq API (llama-3.3-70b-versatile) · Octokit · Express
+**Stack:** Node.js · Groq / Gemini / any OpenAI-compatible API · Octokit · Express
 
 ## Quick Start
 
@@ -88,8 +88,12 @@ Edit `.env`:
 ```env
 GITHUB_TOKEN=ghp_...          # PAT — needs repo + issues + pull_requests scope
 GITHUB_WEBHOOK_SECRET=...     # random string matching your GitHub webhook config
-AI_API_KEY=gsk_...            # Groq API key — free at console.groq.com
+
+# AI — works with any OpenAI-compatible provider
+AI_API_KEY=gsk_...            # Groq (free, console.groq.com) or Gemini (free, aistudio.google.com)
 AI_MODEL=llama-3.3-70b-versatile
+# AI_BASE_URL=https://api.groq.com/openai/v1   # defaults to Groq; swap for Gemini or others
+
 PORT=3003
 ```
 
@@ -174,6 +178,7 @@ Add the webhook to your GitHub repo (**Settings → Webhooks → Add webhook**):
 |---|---|---|
 | `GITHUB_TOKEN` | Yes | PAT with `repo`, `issues`, `pull_requests` scope |
 | `GITHUB_WEBHOOK_SECRET` | No | Validates webhook signatures (recommended) |
-| `AI_API_KEY` | Yes | Groq API key |
+| `AI_API_KEY` | Yes | API key for your chosen provider |
 | `AI_MODEL` | No | Defaults to `llama-3.3-70b-versatile` |
+| `AI_BASE_URL` | No | Provider base URL — defaults to Groq (`https://api.groq.com/openai/v1`) |
 | `PORT` | No | Defaults to `3003` |
