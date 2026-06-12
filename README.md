@@ -2,31 +2,6 @@
 
 An autonomous AI agent that reads GitHub bug reports, explores the codebase to find the root cause, writes a minimal fix on a new branch, and opens a pull request for human review. When the PR receives code review comments, a second agent loop addresses them and replies inline.
 
-## The full autonomous pipeline
-
-When combined with the [triage agent](https://github.com/asfar95/github-issue-triage-agent) and [code review bot](https://github.com/asfar95/ai-code-review-bot), this creates a fully autonomous engineering loop:
-
-```
-Issue opened
-    │
-    ▼
-Triage Agent          classifies issue, adds "bug" label
-    │
-    ▼
-Autofix Agent         reads code, writes fix, opens PR
-    │
-    ▼
-Code Review Bot       reviews the PR, posts inline comments
-    │
-    ▼
-Review-Fix Agent      reads review comments, applies fixes, replies inline
-    │
-    ▼
-Human               merges (or requests further changes)
-```
-
-No manual intervention between steps — each agent triggers the next via GitHub webhooks.
-
 ## What makes this an AI Agent (not a script)
 
 A script follows fixed rules. This agent gets a goal and figures out the steps itself:
