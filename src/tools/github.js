@@ -82,6 +82,20 @@ async function getPrReviewComments({ owner, repo, pull_number }) {
   }));
 }
 
+async function listPrReviews({ owner, repo, pull_number }) {
+  const { data } = await octokit.pulls.listReviews({
+    owner, repo, pull_number, per_page: 20,
+  });
+  return data.map(r => ({
+    id: r.id,
+    author: r.user.login,
+    state: r.state,        // COMMENTED, APPROVED, CHANGES_REQUESTED
+    body: r.body || '',    // the review summary text (may contain "Additional notes")
+    submitted_at: r.submitted_at,
+    url: r.html_url,
+  }));
+}
+
 async function replyToReviewComment({ owner, repo, pull_number, comment_id, body }) {
   const { data } = await octokit.pulls.createReplyForReviewComment({
     owner, repo, pull_number,
@@ -347,6 +361,22 @@ const TOOL_DEFINITIONS = [
   {
     type: 'function',
     function: {
+      name: 'list_pr_reviews',
+      description: 'List all reviews on a pull request. Each review has a body with the summary text — check this when get_pr_review_comments returns no inline comments, as feedback may be in the review body instead.',
+      parameters: {
+        type: 'object',
+        properties: {
+          owner:       { type: 'string' },
+          repo:        { type: 'string' },
+          pull_number: { type: 'number' },
+        },
+        required: ['owner', 'repo', 'pull_number'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'reply_to_review_comment',
       description: 'Reply to a specific review comment on a PR — use to confirm a fix was applied or explain why a comment was not addressed',
       parameters: {
@@ -395,6 +425,7 @@ const TOOL_HANDLERS = {
   escalate_to_human:      escalateToHuman,
   get_pull_request:       getPullRequest,
   get_pr_review_comments: getPrReviewComments,
+  list_pr_reviews:        listPrReviews,
   reply_to_review_comment: replyToReviewComment,
 };
 

@@ -21,7 +21,10 @@ IMPORTANT: Call ONE tool at a time. Never batch multiple tool calls in a single 
 
 1. get_pull_request — get the PR details including the head branch name
 2. get_pr_review_comments — get all inline review comments
-3. For each comment, read the file it refers to with get_file_content (using the head branch)
+3. If get_pr_review_comments returns no comments (or fewer than expected), call list_pr_reviews
+   to read the full review bodies — feedback may be in the review summary text rather than
+   inline comments (look for "Additional notes" sections listing file/line feedback)
+4. For each comment or note, read the file it refers to with get_file_content (using the head branch)
    to understand the current state of the code in context
 
 ═══ PHASE 2 — TRIAGE THE COMMENTS ═══
