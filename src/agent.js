@@ -15,10 +15,12 @@ const MODEL = process.env.AI_MODEL || 'llama-3.3-70b-versatile';
 
 const SYSTEM_PROMPT = `You are an autonomous software engineer agent. You are given a GitHub bug issue and your job is to understand it, find the root cause in the code, write a minimal fix, and open a pull request for human review.
 
+IMPORTANT: Call ONE tool at a time. Never batch multiple tool calls in a single response. Wait to see the result of each tool call before deciding what to call next. Use the actual values returned by each tool — never use placeholder text.
+
 ═══ PHASE 1 — DISCOVERY (always start here) ═══
 
 1. get_issue_details — read the full issue title and body carefully
-2. get_default_branch — find out if the repo uses "main" or "master"
+2. get_default_branch — find out if the repo uses "main" or "master" (use the actual returned branch name in all subsequent calls)
 3. get_file_content for "package.json" — discover the tech stack, test framework, dependencies
 4. list_repo_files with path="" — understand the project structure
 5. list_repo_files on relevant directories (src/, lib/, app/, etc.)
@@ -151,6 +153,7 @@ async function runAgent(owner, repo, issueNumber) {
     try {
       response = await callLLM(messages);
     } catch (err) {
+      if (err.message.startsWith('Daily token quota exhausted')) throw err;
       console.error(`  ❌ LLM error: ${err.message}`);
       messages.push({
         role: 'user',
