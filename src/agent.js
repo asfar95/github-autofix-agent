@@ -88,15 +88,28 @@ async function alreadyAttempted(owner, repo, issueNumber) {
   return comments.some(c => c.body && c.body.includes(BOT_MARKER));
 }
 
+// ── Context pruning — cap history to avoid runaway token growth ────────────────
+function pruneMessages(messages) {
+  const MAX_HISTORY = 12;
+  if (messages.length <= MAX_HISTORY + 1) return messages;
+  const first = messages[0];
+  const recent = messages.slice(-MAX_HISTORY);
+  // Don't start with orphaned tool results — find first assistant/user message
+  let startIdx = 0;
+  while (startIdx < recent.length && recent[startIdx].role === 'tool') startIdx++;
+  return [first, ...recent.slice(startIdx)];
+}
+
 // ── Rate limit retry ───────────────────────────────────────────────────────────
 async function callLLM(messages, attempt = 0) {
   try {
     return await client.chat.completions.create({
       model: MODEL,
-      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...messages],
+      messages: [{ role: 'system', content: SYSTEM_PROMPT }, ...pruneMessages(messages)],
       tools: TOOL_DEFINITIONS,
       tool_choice: 'auto',
-      max_tokens: 4096,
+      parallel_tool_calls: false,
+      max_tokens: 2048,
     });
   } catch (err) {
     if (err.status === 429) {
