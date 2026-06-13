@@ -1,15 +1,13 @@
 require('dotenv').config();
 const express = require('express');
 const crypto = require('crypto');
+const http = require('http');
 const { runAgent } = require('./agent');
 const { runReviewAgent } = require('./review-agent');
 
 const app = express();
 const PORT = process.env.PORT || 3003;
-
-// Tracks repos with an autofix job currently running.
-// review-fix polls this set instead of using a fixed time delay.
-const activeAutofixJobs = new Set();
+const ROUTER_PORT = parseInt(process.env.ROUTER_PORT || '3000', 10);
 
 function verifySignature(rawBody, signature) {
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
@@ -19,12 +17,20 @@ function verifySignature(rawBody, signature) {
   return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
 }
 
-function waitUntilDone(condition, intervalMs = 5000) {
-  return new Promise(resolve => {
-    if (condition()) return resolve();
-    const id = setInterval(() => {
-      if (condition()) { clearInterval(id); resolve(); }
-    }, intervalMs);
+function signalAutofixDone(owner, repo, issueNumber, pullNumber) {
+  const body = JSON.stringify({ owner, repo, issueNumber, pullNumber });
+  return new Promise((resolve) => {
+    const req = http.request({
+      hostname: 'localhost', port: ROUTER_PORT,
+      path: '/internal/autofix-done', method: 'POST',
+      headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
+    }, res => { res.resume(); resolve(); });
+    req.on('error', err => {
+      console.warn(`  ⚠️  Could not signal autofix-done: ${err.message}`);
+      resolve();
+    });
+    req.write(body);
+    req.end();
   });
 }
 
@@ -52,9 +58,9 @@ app.post('/webhook', async (req, res) => {
 
   const owner = payload.repository?.owner?.login;
   const repo = payload.repository?.name;
-  const repoKey = `${owner}/${repo}`;
 
-  // Trigger 1: issues.labeled with "bug" → run autofix agent
+  // Trigger 1: issues.labeled "bug" → run autofix agent
+  // (Router guarantees this only arrives after triage-done)
   if (event === 'issues' && payload.action === 'labeled') {
     if (payload.label?.name !== 'bug') {
       return res.status(200).json({ message: `Ignored label: ${payload.label?.name}` });
@@ -63,43 +69,33 @@ app.post('/webhook', async (req, res) => {
     console.log(`\n📬 Bug label added: ${owner}/${repo}#${issueNumber} — "${payload.issue.title}"`);
     res.status(200).json({ message: 'Fix started', issue: issueNumber });
 
-    const startupDelay = parseInt(process.env.AUTOFIX_STARTUP_DELAY ?? '0', 10);
     (async () => {
-      if (startupDelay > 0) {
-        console.log(`  ⏳ Waiting ${startupDelay / 1000}s for triage agent to finish...`);
-        await new Promise(r => setTimeout(r, startupDelay));
-      }
-      activeAutofixJobs.add(repoKey);
-      console.log(`  🔒 Autofix lock acquired for ${repoKey}`);
+      let pullNumber = null;
       try {
-        await runAgent(owner, repo, issueNumber);
+        const result = await runAgent(owner, repo, issueNumber);
+        if (result.pr_url) {
+          const parts = result.pr_url.split('/');
+          pullNumber = parseInt(parts[parts.length - 1], 10) || null;
+        }
       } catch (err) {
         console.error('❌ Autofix agent error:', err.message);
       } finally {
-        activeAutofixJobs.delete(repoKey);
-        console.log(`  🔓 Autofix lock released for ${repoKey}`);
+        await signalAutofixDone(owner, repo, issueNumber, pullNumber);
       }
     })();
     return;
   }
 
   // Trigger 2: pull_request_review.submitted → run review-fix agent
+  // (Router guarantees this only arrives after autofix-done)
   if (event === 'pull_request_review' && payload.action === 'submitted') {
     const pullNumber = payload.pull_request?.number;
     const reviewer = payload.review?.user?.login;
     console.log(`\n🔍 PR review submitted on ${owner}/${repo}#${pullNumber} by ${reviewer}`);
     res.status(200).json({ message: 'Review fix started', pr: pullNumber });
-
-    (async () => {
-      if (activeAutofixJobs.has(repoKey)) {
-        console.log(`  ⏳ Autofix still running for ${repoKey} — waiting for it to finish before review-fix...`);
-        await waitUntilDone(() => !activeAutofixJobs.has(repoKey));
-        console.log(`  ✅ Autofix done — starting review-fix now`);
-      }
-      runReviewAgent(owner, repo, pullNumber).catch(err =>
-        console.error('❌ Review agent error:', err.message)
-      );
-    })();
+    runReviewAgent(owner, repo, pullNumber).catch(err =>
+      console.error('❌ Review agent error:', err.message)
+    );
     return;
   }
 

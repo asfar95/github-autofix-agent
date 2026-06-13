@@ -183,7 +183,7 @@ async function runAgent(owner, repo, issueNumber) {
     if (!message.tool_calls || message.tool_calls.length === 0) {
       if (message.content) console.log(`💬 ${message.content}`);
       console.log(`\n✅ Agent finished after ${iterations} iteration(s)`);
-      return { success: true, iterations, pr_created: prCreated };
+      return { success: true, iterations, pr_created: prCreated, pr_url: prUrl };
     }
 
     for (const toolCall of message.tool_calls) {
@@ -231,7 +231,7 @@ async function runAgent(owner, repo, issueNumber) {
   }
 
   console.warn(`⚠️  Hit max iterations (${MAX_ITERATIONS})`);
-  return { success: false, iterations, pr_created: prCreated };
+  return { success: false, iterations, pr_created: prCreated, pr_url: prUrl };
 }
 
 module.exports = { runAgent };
