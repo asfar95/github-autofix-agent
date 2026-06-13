@@ -2,7 +2,7 @@ require('dotenv').config();
 const { runReviewAgent } = require('./review-agent');
 
 // Usage: node src/review-fix.js <owner>/<repo> <pr_number>
-// Example: node src/review-fix.js asfar95/sample-app 5
+// Example: node src/review-fix.js asfar95/ai-agent-playground 5
 
 const [, , repoArg, prArg] = process.argv;
 
@@ -15,7 +15,7 @@ const [owner, repo] = repoArg.split('/');
 const pullNumber = parseInt(prArg, 10);
 
 if (!owner || !repo || isNaN(pullNumber)) {
-  console.error('Invalid arguments. Example: node src/review-fix.js asfar95/sample-app 5');
+  console.error('Invalid arguments. Example: node src/review-fix.js asfar95/ai-agent-playground 5');
   process.exit(1);
 }
 
