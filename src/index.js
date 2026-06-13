@@ -2,12 +2,12 @@ require('dotenv').config();
 const express = require('express');
 const crypto = require('crypto');
 const http = require('http');
+const https = require('https');
 const { runAgent } = require('./agent');
 const { runReviewAgent } = require('./review-agent');
 
 const app = express();
 const PORT = process.env.PORT || 3003;
-const ROUTER_PORT = parseInt(process.env.ROUTER_PORT || '3000', 10);
 
 function verifySignature(rawBody, signature) {
   const secret = process.env.GITHUB_WEBHOOK_SECRET;
@@ -17,16 +17,23 @@ function verifySignature(rawBody, signature) {
   return crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(signature));
 }
 
-function signalAutofixDone(owner, repo, issueNumber, pullNumber) {
-  const body = JSON.stringify({ owner, repo, issueNumber, pullNumber });
+// Post a JSON signal to the webhook-router.
+// No-ops silently if AUTOFIX_DONE_URL is not set (standalone mode).
+function signalRouter(data) {
+  const url = process.env.AUTOFIX_DONE_URL;
+  if (!url) return Promise.resolve();
+
+  const body = JSON.stringify(data);
+  const target = new URL(url);
+  const transport = target.protocol === 'https:' ? https : http;
+
   return new Promise((resolve) => {
-    const req = http.request({
-      hostname: 'localhost', port: ROUTER_PORT,
-      path: '/internal/autofix-done', method: 'POST',
+    const req = transport.request(target, {
+      method: 'POST',
       headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) },
     }, res => { res.resume(); resolve(); });
     req.on('error', err => {
-      console.warn(`  ⚠️  Could not signal autofix-done: ${err.message}`);
+      console.warn(`  ⚠️  Router signal failed: ${err.message}`);
       resolve();
     });
     req.write(body);
@@ -80,7 +87,7 @@ app.post('/webhook', async (req, res) => {
       } catch (err) {
         console.error('❌ Autofix agent error:', err.message);
       } finally {
-        await signalAutofixDone(owner, repo, issueNumber, pullNumber);
+        await signalRouter({ owner, repo, issueNumber, pullNumber });
       }
     })();
     return;
