@@ -2,7 +2,7 @@ const OpenAI = require('openai');
 const { Octokit } = require('@octokit/rest');
 const { TOOL_DEFINITIONS, TOOL_HANDLERS } = require('./tools/github');
 
-const MAX_ITERATIONS = parseInt(process.env.AGENT_MAX_ITERATIONS || '20', 10);
+const MAX_ITERATIONS = parseInt(process.env.AGENT_MAX_ITERATIONS || '12', 10);
 const MAX_RETRIES = parseInt(process.env.AGENT_MAX_RETRIES || '3', 10);
 const BOT_MARKER = '<!-- autofix-agent -->';
 
@@ -14,8 +14,6 @@ const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 const MODEL = process.env.AI_MODEL || 'llama-3.3-70b-versatile';
 
 const SYSTEM_PROMPT = `You are an autonomous software engineer agent. You are given a GitHub bug issue and your job is to understand it, find the root cause in the code, write a minimal fix, and open a pull request for human review.
-
-IMPORTANT: Call ONE tool at a time. Never batch multiple tool calls in a single response. Wait to see the result of each tool call before deciding what to call next. Use the actual values returned by each tool — never use placeholder text.
 
 ═══ PHASE 1 — DISCOVERY (always start here) ═══
 
@@ -75,7 +73,6 @@ ESCALATE (do not attempt the fix) when:
 - Match the existing code style exactly — spacing, naming conventions, error handling, quotes
 - Never introduce new dependencies
 - Never refactor code outside the scope of the fix
-- Write the complete file content when using create_or_update_file — not a partial snippet
 - If you updated a file, always read it first with get_file_content to get the sha
 - Never push directly to the default branch — always use a fix/ branch
 - Be honest in the PR description — mention any uncertainty or edge cases you're unsure about`;
@@ -184,8 +181,8 @@ async function runAgent(owner, repo, issueNumber) {
     messages.push(message);
 
     if (!message.tool_calls || message.tool_calls.length === 0) {
-      console.log(`\n✅ Agent finished after ${iterations} iteration(s)`);
       if (message.content) console.log(`💬 ${message.content}`);
+      console.log(`\n✅ Agent finished after ${iterations} iteration(s)`);
       return { success: true, iterations, pr_created: prCreated };
     }
 

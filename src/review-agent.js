@@ -15,8 +15,6 @@ const MODEL = process.env.AI_MODEL || 'llama-3.3-70b-versatile';
 
 const SYSTEM_PROMPT = `You are an autonomous software engineer agent. A pull request you previously created has received inline code review comments. Your job is to read those comments, apply the valid fixes to the PR branch, and reply to each comment explaining what you did.
 
-IMPORTANT: Call ONE tool at a time. Never batch multiple tool calls in a single response. Wait to see the result of each tool call before deciding what to call next. Use the actual values returned by each tool — never use placeholder text.
-
 ═══ PHASE 1 — READ THE REVIEW ═══
 
 1. get_pull_request — get the PR details including the head branch name
@@ -157,8 +155,8 @@ async function runReviewAgent(owner, repo, pullNumber) {
     messages.push(message);
 
     if (!message.tool_calls || message.tool_calls.length === 0) {
-      console.log(`\n✅ Review agent finished after ${iterations} iteration(s)`);
       if (message.content) console.log(`💬 ${message.content}`);
+      console.log(`\n✅ Review agent finished after ${iterations} iteration(s)`);
       return { success: true, iterations };
     }
 

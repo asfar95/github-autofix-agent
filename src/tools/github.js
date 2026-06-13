@@ -126,6 +126,31 @@ async function createBranch({ owner, repo, branch, from_branch }) {
 }
 
 async function createOrUpdateFile({ owner, repo, path, content, message, branch, sha }) {
+  // Guard: if updating an existing file, verify no top-level exports/declarations were dropped.
+  // Small models sometimes write only the changed function and silently omit the rest.
+  if (sha) {
+    const original = await getFileContent({ owner, repo, path, branch });
+    if (!original.error) {
+      const extractNames = src => {
+        const matches = [];
+        // Covers: function foo, const foo =, var foo =, let foo =, class foo, exports.foo, module.exports = { foo }
+        for (const m of src.matchAll(/(?:^|\n)(?:function\s+(\w+)|(?:const|var|let)\s+(\w+)\s*=|class\s+(\w+)|exports\.(\w+)\s*=)/g)) {
+          const name = m[1] || m[2] || m[3] || m[4];
+          if (name) matches.push(name);
+        }
+        return new Set(matches);
+      };
+      const before = extractNames(original.content);
+      const after = extractNames(content);
+      const dropped = [...before].filter(n => !after.has(n));
+      if (dropped.length > 0) {
+        return {
+          error: `Incomplete file content: the following declarations from the original are missing in your new content: ${dropped.join(', ')}. Read the file again and rewrite it in full — every function must be present.`,
+        };
+      }
+    }
+  }
+
   const params = {
     owner, repo, path,
     message,
