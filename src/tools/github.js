@@ -105,6 +105,17 @@ async function replyToReviewComment({ owner, repo, pull_number, comment_id, body
   return { success: true, url: data.html_url };
 }
 
+// Posts a general PR comment (visible in the PR timeline, not tied to a specific diff line).
+// Use this when feedback came from the review body text (out-of-diff) and has no comment_id.
+async function postPrComment({ owner, repo, pull_number, body }) {
+  const { data } = await octokit.issues.createComment({
+    owner, repo,
+    issue_number: pull_number,
+    body,
+  });
+  return { success: true, url: data.html_url };
+}
+
 // ── Branch / write tools ───────────────────────────────────────────────────────
 
 async function getDefaultBranch({ owner, repo }) {
@@ -403,7 +414,7 @@ const TOOL_DEFINITIONS = [
     type: 'function',
     function: {
       name: 'reply_to_review_comment',
-      description: 'Reply to a specific review comment on a PR — use to confirm a fix was applied or explain why a comment was not addressed',
+      description: 'Reply to a specific inline review comment on a PR. Only works for comments that have an id from get_pr_review_comments (inline diff comments). For review body / out-of-diff feedback, use post_pr_comment instead.',
       parameters: {
         type: 'object',
         properties: {
@@ -414,6 +425,23 @@ const TOOL_DEFINITIONS = [
           body:       { type: 'string' },
         },
         required: ['owner', 'repo', 'pull_number', 'comment_id', 'body'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'post_pr_comment',
+      description: 'Post a general comment on the PR timeline — use when responding to feedback from the review body text (out-of-diff notes) that has no comment_id, or to post a summary after addressing all review items.',
+      parameters: {
+        type: 'object',
+        properties: {
+          owner:       { type: 'string' },
+          repo:        { type: 'string' },
+          pull_number: { type: 'number' },
+          body:        { type: 'string' },
+        },
+        required: ['owner', 'repo', 'pull_number', 'body'],
       },
     },
   },
@@ -438,20 +466,21 @@ const TOOL_DEFINITIONS = [
 ];
 
 const TOOL_HANDLERS = {
-  get_issue_details:      getIssueDetails,
-  list_repo_files:        listRepoFiles,
-  get_file_content:       getFileContent,
-  search_code:            searchCode,
-  get_default_branch:     getDefaultBranch,
-  create_branch:          createBranch,
-  create_or_update_file:  createOrUpdateFile,
-  create_pull_request:    createPullRequest,
-  post_issue_comment:     postIssueComment,
-  escalate_to_human:      escalateToHuman,
-  get_pull_request:       getPullRequest,
-  get_pr_review_comments: getPrReviewComments,
-  list_pr_reviews:        listPrReviews,
+  get_issue_details:       getIssueDetails,
+  list_repo_files:         listRepoFiles,
+  get_file_content:        getFileContent,
+  search_code:             searchCode,
+  get_default_branch:      getDefaultBranch,
+  create_branch:           createBranch,
+  create_or_update_file:   createOrUpdateFile,
+  create_pull_request:     createPullRequest,
+  post_issue_comment:      postIssueComment,
+  escalate_to_human:       escalateToHuman,
+  get_pull_request:        getPullRequest,
+  get_pr_review_comments:  getPrReviewComments,
+  list_pr_reviews:         listPrReviews,
   reply_to_review_comment: replyToReviewComment,
+  post_pr_comment:         postPrComment,
 };
 
 module.exports = { TOOL_DEFINITIONS, TOOL_HANDLERS };

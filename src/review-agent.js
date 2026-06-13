@@ -13,40 +13,44 @@ const client = new OpenAI({
 const octokit = new Octokit({ auth: process.env.GITHUB_TOKEN });
 const MODEL = process.env.AI_MODEL || 'llama-3.3-70b-versatile';
 
-const SYSTEM_PROMPT = `You are an autonomous software engineer agent. A pull request you previously created has received inline code review comments. Your job is to read those comments, apply the valid fixes to the PR branch, and reply to each comment explaining what you did.
+const SYSTEM_PROMPT = `You are an autonomous software engineer agent. A pull request you previously created has received code review feedback. Your job is to read that feedback, apply the valid fixes to the PR branch, and reply to each item explaining what you did.
 
 ═══ PHASE 1 — READ THE REVIEW ═══
 
 1. get_pull_request — get the PR details including the head branch name
-2. get_pr_review_comments — get all inline review comments
-3. If get_pr_review_comments returns no comments (or fewer than expected), call list_pr_reviews
-   to read the full review bodies — feedback may be in the review summary text rather than
-   inline comments (look for "Additional notes" sections listing file/line feedback)
+2. get_pr_review_comments — get all INLINE review comments (these have an id you can reply to)
+3. ALWAYS also call list_pr_reviews — review bodies may contain "Additional notes (outside diff)"
+   sections with feedback on lines the reviewer couldn't anchor to the diff. Treat every note in
+   those sections as a separate feedback item to address.
 4. For each comment or note, read the file it refers to with get_file_content (using the head branch)
-   to understand the current state of the code in context
 
 ═══ PHASE 2 — TRIAGE THE COMMENTS ═══
 
-Categorise each comment as:
-- ACTIONABLE: a clear code fix you can apply (wrong logic, missing check, bad naming, style issue)
-- NOT_APPLICABLE: opinion-based, architectural, requires more context, or conflicts with other comments
+Categorise each feedback item as:
+- ACTIONABLE: a clear code fix you can apply
+- NOT_APPLICABLE: opinion-based, architectural, requires more context, or conflicts with other items
 - ALREADY_FIXED: the issue no longer exists in the current file content
 
-For NOT_APPLICABLE or ALREADY_FIXED comments, reply explaining why — do not silently skip them.
+For NOT_APPLICABLE or ALREADY_FIXED items, reply explaining why — do not silently skip them.
 
-═══ PHASE 3 — APPLY FIXES ═══
+═══ PHASE 3 — APPLY FIXES AND REPLY ═══
 
-For each ACTIONABLE comment:
+For each ACTIONABLE item:
 1. get_file_content on the affected file (with branch = head branch) to get current content and sha
 2. Apply the fix — match the existing code style exactly
 3. create_or_update_file with the full corrected file content, sha, and a clear commit message
-4. reply_to_review_comment: "✅ Fixed in [short description of what changed]"
+4. Reply to the feedback:
+   - If the item came from get_pr_review_comments (has a comment id) → reply_to_review_comment
+   - If the item came from the review body text (out-of-diff, no comment id) → post_pr_comment
+     with a response like: "✅ Addressed [note about the fee calculation]: [what you changed]"
 
 For NOT_APPLICABLE:
-- reply_to_review_comment: explain briefly why it wasn't changed
+- Inline comment (has id) → reply_to_review_comment explaining why
+- Review body note (no id) → post_pr_comment explaining why
 
 For ALREADY_FIXED:
-- reply_to_review_comment: "This was already addressed in the current code."
+- Inline comment → reply_to_review_comment: "This is already addressed in the current code."
+- Review body note → post_pr_comment: "The [issue] is already addressed in the current code."
 
 ═══ PRINCIPLES ═══
 
@@ -60,10 +64,12 @@ For ALREADY_FIXED:
 
 // ── Idempotency ────────────────────────────────────────────────────────────────
 async function alreadyAddressed(owner, repo, pullNumber) {
-  const { data: comments } = await octokit.pulls.listReviewComments({
-    owner, repo, pull_number: pullNumber, per_page: 100,
-  });
-  return comments.some(c => c.body && c.body.includes(REVIEW_MARKER));
+  const [{ data: reviewComments }, { data: issueComments }] = await Promise.all([
+    octokit.pulls.listReviewComments({ owner, repo, pull_number: pullNumber, per_page: 100 }),
+    octokit.issues.listComments({ owner, repo, issue_number: pullNumber, per_page: 100 }),
+  ]);
+  const hasMarker = c => c.body && c.body.includes(REVIEW_MARKER);
+  return reviewComments.some(hasMarker) || issueComments.some(hasMarker);
 }
 
 // ── Context pruning — cap history to avoid runaway token growth ────────────────
@@ -184,8 +190,8 @@ async function runReviewAgent(owner, repo, pullNumber) {
 
       console.log(`  🔧 ${name}`, JSON.stringify(args));
 
-      // Stamp review replies so idempotency check works
-      if (name === 'reply_to_review_comment' && !args.body?.includes(REVIEW_MARKER)) {
+      // Stamp review replies/comments so idempotency check works
+      if ((name === 'reply_to_review_comment' || name === 'post_pr_comment') && !args.body?.includes(REVIEW_MARKER)) {
         args.body = `${args.body}\n\n${REVIEW_MARKER}`;
       }
 
