@@ -132,6 +132,8 @@ async function runReviewAgent(owner, repo, pullNumber) {
   ];
 
   let iterations = 0;
+  let nudgeCount = 0;
+  const MAX_NUDGES = 3;
 
   while (iterations < MAX_ITERATIONS) {
     iterations++;
@@ -156,6 +158,12 @@ async function runReviewAgent(owner, repo, pullNumber) {
 
     if (!message.tool_calls || message.tool_calls.length === 0) {
       if (message.content) console.log(`💬 ${message.content}`);
+      if (nudgeCount < MAX_NUDGES) {
+        nudgeCount++;
+        console.log(`  ↩️  No tool call — nudging model (${nudgeCount}/${MAX_NUDGES})`);
+        messages.push({ role: 'user', content: 'Continue with the next step. Call a tool.' });
+        continue;
+      }
       console.log(`\n✅ Review agent finished after ${iterations} iteration(s)`);
       return { success: true, iterations };
     }

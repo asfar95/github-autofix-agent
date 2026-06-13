@@ -158,6 +158,8 @@ async function runAgent(owner, repo, issueNumber) {
   let iterations = 0;
   let prCreated = false;
   let prUrl = null;
+  let nudgeCount = 0;
+  const MAX_NUDGES = 3;
 
   while (iterations < MAX_ITERATIONS) {
     iterations++;
@@ -182,6 +184,12 @@ async function runAgent(owner, repo, issueNumber) {
 
     if (!message.tool_calls || message.tool_calls.length === 0) {
       if (message.content) console.log(`💬 ${message.content}`);
+      if (!prCreated && nudgeCount < MAX_NUDGES) {
+        nudgeCount++;
+        console.log(`  ↩️  No tool call but PR not created — nudging model (${nudgeCount}/${MAX_NUDGES})`);
+        messages.push({ role: 'user', content: 'Continue with the next step. Call a tool.' });
+        continue;
+      }
       console.log(`\n✅ Agent finished after ${iterations} iteration(s)`);
       return { success: true, iterations, pr_created: prCreated, pr_url: prUrl };
     }
